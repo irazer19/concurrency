@@ -15,3 +15,18 @@ you could define throughput as the number of images downloaded by your phone or 
 Latency is defined as the time required to complete a task or produce a result. Latency is also referred to as response time. 
 The time it takes for a web browser to download Instagram images from the internet is the latency for downloading the images. <br/>
 
+Synchronous execution refers to line-by-line execution of code. If a function is invoked, the program execution waits until the function call is completed. <br/>
+An asynchronous program doesn’t wait for a task to complete before moving on to the next task. <br/>
+
+Whenever threads are introduced in a program, the shared state amongst the threads becomes vulnerable to corruption.
+```python
+count = 0
+
+def increment():
+    global count
+    count += 1
+```
+In this code, the count += 1 is not an atomic operation, which means that it has multiple steps/code before the count value
+is incremented which makes it vulnerable to corruption when two or more threads try to update it.
+This is the reason we apply locks to the sections of the code which need to be sequentially executed.
+
