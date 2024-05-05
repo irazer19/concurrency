@@ -175,3 +175,189 @@ The parent process can communicate with the spawned child process through stdin,
 There are two ways that processes can communicate between themselves:
 1. Queues
 2. Pipes
+
+Queues:
+Queues in Python's multiprocessing context are thread and process-safe, meaning they can be used by multiple producers and 
+consumers across different threads and processes without risking data corruption. They are implemented as FIFO (first-in, first-out) 
+data structures, making them suitable for tasks where order needs to be preserved. <br/>
+```python
+from multiprocessing import Process, Queue, current_process
+import multiprocessing
+import random
+
+
+def child_process(q):
+    count = 0
+    while not q.empty():
+        print(q.get())
+        count += 1
+
+    print("child process {0} processed {1} items from the queue".format(current_process().name, count), flush=True)
+
+if __name__ == '__main__':
+    multiprocessing.set_start_method("forkserver")
+    q = Queue()
+    print("This machine has {0} CPUs".format(str(multiprocessing.cpu_count())))
+    
+    random.seed()
+    for _ in range(100):
+        q.put(random.randrange(10))
+
+    p1 = Process(target=child_process, args=(q,))
+    p2 = Process(target=child_process, args=(q,))
+
+    p1.start()
+    p2.start()
+
+    p1.join()
+    p2.join()
+```
+
+Pipes: Pipes provide a simpler form of communication by allowing a unidirectional or bidirectional flow of information between two endpoints. 
+Each end of the pipe can either send or receive data, depending on how the pipe is configured (duplex or simplex). Pipes are generally faster 
+than queues because they involve less overhead and are best suited for simpler scenarios where only two processes need to communicate. <br/>
+Example: recv_conn, send_conn = Pipe(duplex=False)
+```python
+from multiprocessing import Process, Pipe
+import time
+
+def child_process(conn):
+    for i in range(0, 10):
+        conn.send("hello " + str(i + 1))
+    conn.close()
+
+
+if __name__ == '__main__':
+    parent_conn, child_conn = Pipe()
+    p = Process(target=child_process, args=(child_conn,))
+    p.start()
+    time.sleep(3)
+
+    for _ in range(0, 10):
+        msg = parent_conn.recv()
+        print(msg)
+
+    parent_conn.close()
+    p.join()
+```
+
+We can also share a variable, array, etc with the child process.
+Ex: var = Value('I', 1), we can pass the 'var' as argument to the child process.
+
+The Pool object consists of a group of processes that can receive tasks for execution.
+```python
+from multiprocessing import Pool
+import os
+
+def init(main_id):
+    print("pool process with id {0} received a task from main process with id {1}".format(os.getpid(), main_id))
+
+
+def square(x):
+    return x * x
+
+if __name__ == '__main__':
+    main_process_id = os.getpid()
+
+    pool = Pool(processes=1,
+                initializer=init,
+                initargs=(main_process_id,),
+                maxtasksperchild=1)
+
+    result = pool.apply(square, (3,))
+    print(result)
+```
+
+#### Manager:
+Python provides a way to share data between processes that may be running on different machines. The previous examples we 
+saw of inter-process communication were restricted to a single machine. Using the Manager class we can share objects between 
+processes running on the same machine or different machines. 
+You can also provide an auth_key for securing the connection using the manager class.<br/>
+
+```python
+from multiprocessing.managers import BaseManager
+from multiprocessing import Process
+from threading import Thread
+import time, random
+
+def ProcessA(port_num):
+    my_string = "hello World"
+    manager = BaseManager(address=('127.0.0.1', port_num))
+    manager.register('get_my_string', callable=lambda: my_string)
+    server = manager.get_server()
+
+    Thread(target=shutdown,args=(server,)).start()
+
+    server.serve_forever()
+
+def ProcessB(port_num):
+    manager = BaseManager(address=('127.0.0.1', port_num))
+    manager.register('get_my_string')
+    manager.connect()
+    proxy_my_string = manager.get_my_string()
+
+    print("In ProcessB repr(proxy_my_string) = {0}".format(repr(proxy_my_string)))
+    print("In ProcessB str(proxy_my_string) = {0}".format(str(proxy_my_string)))
+
+    print(proxy_my_string)
+    print(proxy_my_string.capitalize())
+    print(proxy_my_string._callmethod("capitalize"))
+
+def shutdown(server):
+    time.sleep(3)
+    server.stop_event.set()
+
+
+if __name__ == '__main__':
+    port_num = random.randint(10000, 60000)
+
+    # Start another process which will access the shared string
+    p1 = Process(target=ProcessA, args=(port_num,), name="ProcessA")
+    p1.start()
+
+    time.sleep(1)
+
+    p2 = Process(target=ProcessB, args=(port_num,), name="ProcessB")
+    p2.start()
+
+    p1.join()
+    p2.join()
+```
+#### Namespace:
+Namespace is a type that can be registered with a SyncManager for sharing between processes. It doesn't have public methods but we can add writeable attributes to it. 
+Think of namespace as a bulletin board, where attributes can be assigned by one process, and read by others.<br/>
+```python
+from multiprocessing.managers import SyncManager
+from multiprocessing import Process
+import multiprocessing
+
+def process1(ns):
+    print(ns.item)
+    ns.item = "educative"
+
+
+def process2(ns):
+    print(ns.item)
+    ns.item = "educative is awesome !"
+
+if __name__ == '__main__':
+    multiprocessing.set_start_method("spawn")
+    # create a namespace
+    manager = SyncManager(address=('', 55555))
+    manager.start()
+    shared_vars = manager.Namespace()  # manager.Namespace()
+    shared_vars.item = "empty"
+    # manager.register("get_namespace", callable=lambda: None)
+
+    # create the first process
+    p1 = Process(target=process1, args=(shared_vars,))
+    p1.start()
+    p1.join()
+
+    # create the second process
+    p2 = Process(target=process2, args=(shared_vars,))
+    p2.start()
+    p2.join()
+
+    print(shared_vars.item)
+```
