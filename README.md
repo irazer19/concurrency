@@ -361,3 +361,118 @@ if __name__ == '__main__':
 
     print(shared_vars.item)
 ```
+
+
+### Concurrent Package:
+#### PoolExecutors:
+1. Threadpool executor
+2. ProcessPool executor
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+from threading import current_thread
+
+def say_hi(item):
+    print("\nhi " + str(item) + " executed in thread id " + current_thread().name, flush=True)
+
+if __name__ == '__main__':
+    executor = ThreadPoolExecutor(max_workers=10)
+    lst = list()
+    # We can also use map function
+    for i in range(1, 10):
+        lst.append(executor.submit(say_hi, "guest" + str(i)))
+
+    for future in lst:
+        future.result()
+
+    executor.shutdown()
+```
+
+ProcessPool Executor using map function:
+```python
+from concurrent.futures import ProcessPoolExecutor
+import os
+
+def square(item):
+    print("Executed in process with id " + str(os.getpid()), flush=True)
+    return item * item
+
+if __name__ == '__main__':
+    executor = ProcessPoolExecutor(max_workers=10)
+    # chunksize=1 means that each process will get 1 datapoint as arg.
+    # For chunksize=5, we will send 5 args into a single process, which means only 2 process is required for the below
+    # 10 arguments.
+    it = executor.map(square, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10), chunksize=1)
+    # looping over futures
+    for sq in it:
+        print(sq)
+
+    executor.shutdown()
+```
+
+You can think of Future as an entity that represents a deferred computation that may or may not have been completed. 
+It is an object that represents the outcome of a computation to be completed in future. <br/>
+Methods which are provided in future object:
+```python
+from concurrent.futures import ThreadPoolExecutor
+import time
+
+def my_special_callback(ftr):
+    res = ftr.result()
+    print("my_special_callback invoked " + str(res))
+
+def square(item):
+    # simulate a computation by sleeping
+    time.sleep(5)
+    return item * item
+
+if __name__ == '__main__':
+    executor = ThreadPoolExecutor(max_workers=10)
+
+    future = executor.submit(square, 7)
+
+    print("is running : " + str(future.running()))
+    print("is done : " + str(future.done()))
+    print("Attempt to cancel : " + str(future.cancel()))
+    print("is cancelled : " + str(future.cancelled()))
+    # To see any exception
+    ex = future.exception()
+    # We can also add a callback to be executed after the future is ready.
+    future.add_done_callback(my_special_callback)
+
+    executor.shutdown()
+```
+The concurrent.futures module provides two methods to wait for futures collectively. These are:
+1. wait
+2. as_completed
+
+```python
+from concurrent.futures import wait
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
+
+def square(item):
+    return item * item
+
+if __name__ == '__main__':
+    lst = list()
+    threadExecutor = ThreadPoolExecutor(max_workers=10)
+    processExecutor = ProcessPoolExecutor(max_workers=10)
+
+    for i in range(1, 6):
+        lst.append(threadExecutor.submit(square, i))
+
+    for i in range(6, 11):
+        lst.append(processExecutor.submit(square, i))
+
+    result = wait(lst, timeout=None, return_when='ALL_COMPLETED')
+
+    print("completed futures count: " + str(len(result.done)) + " and uncompleted futures count: " +
+          str(len(result.not_done)) + "\n")
+
+    for ftr in result.done:
+        print(ftr.result())
+
+    threadExecutor.shutdown()
+    processExecutor.shutdown()
+```
