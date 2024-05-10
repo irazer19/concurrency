@@ -476,3 +476,91 @@ if __name__ == '__main__':
     threadExecutor.shutdown()
     processExecutor.shutdown()
 ```
+
+### AsyncIO
+
+A coroutine can be defined as a special function that can give up control to its caller without losing its state. The methods or functions 
+that we are used to, the ones that conclusively return a value and don't remember state between invocations, can be thought of as a 
+specialization of a coroutine, also known as subroutines. <br/>
+
+The event loop is a programming construct that waits for events to happen and then dispatches them to an event handler.
+Threads don't come cheap. Creating, maintaining and tearing down threads takes CPU cycles in addition to memory. In fact, this 
+difference becomes more visible in webservers which use threads to handle HTTP web requests vs which use an event loop. 
+Apache is an example of the former and NGINX of the latter. NGINX outshines Apache in memory usage under high load. <br/>
+
+Native Coroutine can be defined as:
+```python
+import asyncio
+async def coro():
+    await asyncio.sleep(1)
+```
+
+asyncio provides a framework for dealing with asynchronous I/O tasks. It allows you to run multiple tasks and handle I/O operations without blocking the execution of your program. 
+This is achieved through the use of coroutines, which are a type of function that can pause its execution before completing and can be resumed at a later point.
+#### Key Components
+1. Coroutines: Defined with async def. These are the functions you will execute asynchronously. They are used with await, which allows other tasks to run while waiting for an operation to complete.
+2. Event Loop: Manages and distributes the execution of different tasks. It keeps track of all the running tasks and resumes their execution when the awaited operation is completed.
+3. Tasks: These are used to schedule coroutines concurrently. When a coroutine is wrapped into a Task with functions like asyncio.create_task(), it’s scheduled to run on the event loop. <br/>
+
+Example: Fetching data from urls:
+```python
+import asyncio
+
+# Coroutine
+async def fetch_data(url, delay):
+    print(f"Starting to fetch data from {url}")
+    await asyncio.sleep(delay)  # Simulate network delay
+    print(f"Finished fetching data from {url}")
+    return f"Data from {url}"
+
+async def main():
+    urls = ['url1', 'url2', 'url3']  # Simulated URLs
+    delays = [2, 3, 1]  # Simulated network delays for each URL
+    
+    # Create tasks for each URL
+    tasks = [fetch_data(url, delay) for url, delay in zip(urls, delays)]
+    
+    # Wait for all tasks to complete
+    results = await asyncio.gather(*tasks)
+    
+    # Optionally, process the results
+    for result in results:
+        print(result)
+
+if __name__ == "__main__":
+    # Run the event loop
+    asyncio.run(main())
+
+```
+
+While asyncio is excellent for I/O-bound tasks, it's not beneficial for CPU-bound tasks. For such tasks, using multi-threading or multi-processing might be more appropriate. <br/>
+
+### Problems:
+Implementation of Blocking Queue:
+```python
+# Code to add item to the queue safely
+def enqueue(self, item):
+    self.cond.acquire()
+    while self.curr_size == self.max_size:
+        self.cond.wait()
+
+    self.q.append(item)
+    self.curr_size += 1
+    # Notify all, such that the consumer who is trying to dequeue is wokenup
+    self.cond.notifyAll()
+    self.cond.release()
+
+    # Code to remove item from the queue safely
+def dequeue(self):
+    self.cond.acquire()
+    while self.curr_size == 0:
+        self.cond.wait()
+
+    item = self.q.pop(0)
+    self.curr_size -= 1
+    
+    self.cond.notifyAll()
+    self.cond.release()
+
+    return item
+```
