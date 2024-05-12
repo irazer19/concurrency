@@ -564,3 +564,102 @@ def dequeue(self):
 
     return item
 ```
+
+#### Rate-Limit using token bucket:
+We generate a token every second, but total number of available tokens cannot be greater than the max_token.
+Every thread gets one token, we apply lock so that context-switching does not happen.
+This mechanism ensures that the rate of requests does not exceed the number defined by MAX_TOKENS per second, 
+effectively throttling the access to the resource the tokens are protecting. <br/>
+```python
+from threading import Thread
+from threading import current_thread
+from threading import Lock
+import time
+
+class TokenBucketFilter:
+    def __init__(self, MAX_TOKENS):
+        self.MAX_TOKENS = MAX_TOKENS
+        self.last_request_time = time.time()
+        self.possible_tokens = 0
+        self.lock = Lock()
+    def get_token(self):
+
+        with self.lock:
+            self.possible_tokens += int((time.time() - self.last_request_time))
+
+            if self.possible_tokens > self.MAX_TOKENS:
+                self.possible_tokens = self.MAX_TOKENS
+
+            if self.possible_tokens == 0:
+                time.sleep(1)
+            else:
+                self.possible_tokens -= 1
+
+            self.last_request_time = time.time()
+
+            print("Granting {0} token at {1} ".format(current_thread().getName(), int(time.time())))
+
+if __name__ == "__main__":
+    token_bucket_filter = TokenBucketFilter(1)
+    threads = list()
+    for _ in range(0, 10):
+        threads.append(Thread(target=token_bucket_filter.get_token))
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+```
+Another approach using daemon thread, where we start a daemon thread to fill in available tokens.
+This approach uses condition variable to lock/notify.
+```python
+from threading import Thread
+from threading import Condition
+from threading import current_thread
+import time
+
+class MultithreadedTokenBucketFilter():
+    def __init__(self, maxTokens):
+        self.MAX_TOKENS = int(maxTokens)
+        self.possibleTokens  = int(0)
+        self.ONE_SECOND = int(1)
+        self.cond = Condition()
+        dt = Thread(target = self.daemonThread)
+        dt.setDaemon(True)
+        dt.start()
+    
+    def daemonThread(self):
+        while True:
+            self.cond.acquire()
+            if self.possibleTokens < self.MAX_TOKENS:
+                self.possibleTokens = self.possibleTokens + 1
+            self.cond.notify() 
+            self.cond.release()
+            
+            time.sleep(self.ONE_SECOND)
+    
+    def getToken(self):
+        self.cond.acquire()
+        while self.possibleTokens == 0:
+            self.cond.wait()
+        self.possibleTokens = self.possibleTokens - 1
+        self.cond.release()
+
+        print("Granting " + current_thread().getName() + " token at " + str(time.time()))
+
+if __name__ == "__main__":
+    threads_list = [];
+    bucket = MultithreadedTokenBucketFilter(1)
+    
+    for x in range(10):
+        workerthread =  Thread(target=bucket.getToken)
+        workerthread.name = "Thread_" + str(x+1)
+        threads_list.append(workerthread)
+    
+    for t in threads_list:
+        t.start()
+        
+    for t in threads_list:
+        t.join()
+```
