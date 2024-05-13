@@ -750,3 +750,161 @@ if __name__ == "__main__":
     # wait for all actions to execute
     time.sleep(15)
 ```
+
+#### Read-Write Lock:
+Imagine you have an application where you have multiple readers and a single writer. You are asked to design a lock which lets multiple readers read at the same time, but only one writer write at a time.
+```python
+from threading import Condition
+from threading import Thread
+from threading import current_thread
+import time
+import random
+
+class ReadersWriteLock:
+
+    def __init__(self):
+        self.cond_var = Condition()
+        self.write_in_progress = False
+        self.readers = 0
+
+    def acquire_read_lock(self):
+        self.cond_var.acquire()
+
+        while self.write_in_progress is True:
+            self.cond_var.wait()
+
+        self.readers += 1
+
+        self.cond_var.release()
+
+    def release_read_lock(self):
+        self.cond_var.acquire()
+
+        self.readers -= 1
+        if self.readers is 0:
+            self.cond_var.notifyAll()
+
+        self.cond_var.release()
+
+    def acquire_write_lock(self):
+        self.cond_var.acquire()
+
+        while self.readers is not 0 or self.write_in_progress is True:
+            self.cond_var.wait()
+        self.write_in_progress = True
+
+        self.cond_var.release()
+
+    def release_write_lock(self):
+        self.cond_var.acquire()
+
+        self.write_in_progress = False
+        self.cond_var.notifyAll()
+
+        self.cond_var.release()
+
+def writer_thread(lock):
+    while 1:
+        lock.acquire_write_lock()
+        print("\n{0} writing at {1} and current readers = {2}".format(current_thread().getName(), time.time(),
+                                                                      lock.readers), flush=True)
+        write_for = random.randint(1, 5)
+        time.sleep(write_for)
+        print("\n{0} releasing at {1} and current readers = {2}".format(current_thread().getName(), time.time(),
+                                                                        lock.readers),
+              flush=True)
+        lock.release_write_lock()
+        time.sleep(1)
+
+def reader_thread(lock):
+    while 1:
+        lock.acquire_read_lock()
+        print("\n{0} reading at {1} and write in progress = {2}".format(current_thread().getName(), time.time(),
+                                                                        lock.write_in_progress), flush=True)
+        read_for = random.randint(1, 2)
+        time.sleep(read_for)
+        print("\n{0} releasing at {1} and write in progress = {2}".format(current_thread().getName(), time.time(),
+                                                                          lock.write_in_progress), flush=True)
+        lock.release_read_lock()
+        time.sleep(1)
+
+if __name__ == "__main__":
+    lock = ReadersWriteLock()
+    writer1 = Thread(target=writer_thread, args=(lock,), name="writer-1", daemon=True)
+    writer2 = Thread(target=writer_thread, args=(lock,), name="writer-2", daemon=True)
+
+    writer1.start()
+
+    readers = list()
+    for i in range(0, 3):
+        readers.append(Thread(target=reader_thread, args=(lock,), name="reader-{0}".format(i + 1), daemon=True))
+
+    for reader in readers:
+        reader.start()
+    writer2.start()
+    time.sleep(15)
+```
+
+#### Unisex-Bathroom Problem:
+A bathroom is being designed for the use of both males and females in an office but requires the following constraints to be maintained:
+1. There cannot be men and women in the bathroom at the same time.
+2. There should never be more than three employees in the bathroom simultaneously.
+
+
+```python
+from threading import Semaphore
+from threading import Condition
+import time
+
+class UnisexBathroomProblem:
+    def __init__(self):
+        self.in_use_by = "none"
+        self.emps_in_bathroom = 0
+        self.max_emps_sem = Semaphore(3)
+        self.cond = Condition()
+
+    def use_bathroom(self, name):
+        # simulate using a bathroom
+        print("\n{0} is using the bathroom. {1} employees in bathroom".format(name, self.emps_in_bathroom))
+        time.sleep(1)
+        print("\n{0} is done using the bathroom".format(name))
+
+    def male_use_bathroom(self, name):
+        # The with statement takes care of .acquire and .release of the condition variable.
+        with self.cond:
+            while self.in_use_by == "female":
+                self.cond.wait()
+            self.max_emps_sem.acquire()
+            self.emps_in_bathroom += 1
+            self.in_use_by = "male"
+
+        self.use_bathroom(name)
+        self.max_emps_sem.release()
+
+        with self.cond:
+            self.emps_in_bathroom -= 1
+            if self.emps_in_bathroom == 0:
+                self.in_use_by = "none"
+
+            self.cond.notifyAll()
+
+    def female_use_bathroom(self, name):
+        with self.cond:
+            while self.in_use_by == "male":
+                self.cond.wait()
+
+            self.max_emps_sem.acquire()
+            self.emps_in_bathroom += 1
+            self.in_use_by = "female"
+
+        self.use_bathroom(name)
+        self.max_emps_sem.release()
+
+        with self.cond:
+            self.emps_in_bathroom -= 1
+
+            if self.emps_in_bathroom == 0:
+                self.in_use_by = "none"
+
+            self.cond.notifyAll()
+```
