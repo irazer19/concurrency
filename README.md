@@ -663,3 +663,90 @@ if __name__ == "__main__":
     for t in threads_list:
         t.join()
 ```
+
+#### Thread Safe Deferred Callback:
+Design and implement a thread-safe class that allows registration of callback methods that are executed after a user specified time interval in seconds has elapsed.
+
+```python
+from threading import Condition
+from threading import Thread
+import heapq
+import time
+import math
+
+class DeferredCallbackExecutor:
+    def __init__(self):
+        self.actions = list()  # Maintaining list of actions 
+        self.cond = Condition()
+        self.sleep = 0
+    
+    def add_action(self, action):
+        # add exec_at time for the action
+        action.exec_secs_after = time.time() + action.exec_secs_after
+
+        self.cond.acquire()
+        # We use min heap to store the actions based on the earliest time, so that the action with the earliest time
+        # is processed first.
+        heapq.heappush(self.actions, action)
+        self.cond.notify()
+        self.cond.release()
+
+    def start(self):
+
+        while True:
+            self.cond.acquire()
+            
+            # If list of actions is empty, we wait
+            while len(self.actions) is 0:
+                self.cond.wait()
+            # If some actions exist, then we compute its to wait before execution,
+            # if the time <= 0, its ready for execution and break, else we sleep
+            while len(self.actions) is not 0:
+                # calculate sleep duration
+                next_action = self.actions[0]
+                sleep_for = next_action.exec_secs_after - math.floor(time.time())
+                if sleep_for <= 0:
+                    # time to execute action
+                    break
+
+                self.cond.wait(timeout=sleep_for)
+            
+            # Getting the action from min heap
+            action_to_execute_now = heapq.heappop(self.actions)
+            # Executing the action.
+            action_to_execute_now.action(*(action_to_execute_now,))
+
+            self.cond.release()
+
+# Actio object
+class DeferredAction(object):
+    def __init__(self, exec_secs_after, name, action):
+        self.exec_secs_after = exec_secs_after
+        self.action = action
+        self.name = name
+
+    def __lt__(self, other):
+        return self.exec_secs_after < other.exec_secs_after
+
+def say_hi(action):
+        print("hi, I am {0} executed at {1} and required at {2}".format(action.name, math.floor(time.time()),
+                                                                    math.floor(action.execute_at)))
+
+if __name__ == "__main__":
+    action1 = DeferredAction(3, ("A",), say_hi)
+    action2 = DeferredAction(2, ("B",), say_hi)
+    action3 = DeferredAction(1, ("C",), say_hi)
+    action4 = DeferredAction(7, ("D",), say_hi)
+
+    executor = DeferredCallbackExecutor()
+    t = Thread(target=executor.start, daemon=True)
+    t.start()
+
+    executor.add_action(action1)
+    executor.add_action(action2)
+    executor.add_action(action3)
+    executor.add_action(action4)
+
+    # wait for all actions to execute
+    time.sleep(15)
+```
