@@ -51,6 +51,35 @@ Once a thread acquires a mutex, all other threads attempting to acquire the same
 Semaphore, on the other hand, is used for limiting access to a collection of resources. Think of semaphore as having a limited number of permits 
 to give out. If a semaphore has given out all the permits it has, then any new thread that comes along requesting a permit will be blocked till 
 an earlier thread with a permit returns it to the semaphore. <br/>
+When you acquire a semaphore lock, the behavior depends on the state of the semaphore's internal counter. If the internal counter of the semaphore is 
+greater than zero, the semaphore decrements the counter by one and allows the acquiring operation to proceed immediately without putting the thread or process to sleep. <br/>
+However, if the internal counter is zero at the time of the acquisition attempt, this means that the maximum number of allowed concurrent operations 
+(as defined by the semaphore's capacity) are already in progress. In this case, the semaphore will block the acquiring thread or process, effectively 
+putting it to sleep until another thread or process releases the semaphore, incrementing the internal counter and allowing the blocked thread to proceed <br/>
+```python
+import threading
+import time
+
+# Function that represents the task each thread will execute
+def task(semaphore, thread_number):
+    with semaphore:
+        print(f"Thread {thread_number} is running")
+        time.sleep(2)  # Simulate a task taking some time to complete
+
+# Create a semaphore that allows up to 3 threads to enter the critical section
+semaphore = threading.Semaphore(3)
+# List to hold the threads
+threads = []
+# Create and start 5 threads
+for i in range(5):
+    t = threading.Thread(target=task, args=(semaphore, i+1))
+    threads.append(t)
+    t.start()
+# Wait for all threads to complete
+for t in threads:
+    t.join()
+print("All threads have completed their tasks.")
+```
 
 #### Monitor:
 A monitor is a synchronization construct that helps manage access to shared resources by multiple threads in a concurrent programming environment. <br/>
@@ -907,4 +936,102 @@ class UnisexBathroomProblem:
                 self.in_use_by = "none"
 
             self.cond.notifyAll()
+```
+
+### Uber Rider problem:
+Imagine at the end of a political conference, republicans and democrats are trying to leave the venue and ordering Uber rides at the same time. 
+However, to make sure no fight breaks out in an Uber ride, the software developers at Uber come up with an algorithm whereby either an Uber 
+ride can have all democrats or republicans or two Democrats and two Republicans. All other combinations can result in a fist-fight. <br/>
+
+```python
+from threading import Semaphore
+from threading import current_thread
+from threading import Lock
+from threading import Barrier
+
+class UberSeatingProblem():
+    def __init__(self):
+        self.democrats_count = 0
+        self.democrats_waiting = Semaphore(0)
+        self.republicans_count = 0
+        self.republicans_waiting = Semaphore(0)
+        self.lock = Lock()
+        self.barrier = Barrier(4)
+        self.ride_count = 0
+
+    def drive(self):
+        self.ride_count += 1
+        print("Uber ride # {0} filled and on its way".format(self.ride_count), flush=True)
+
+    def seated(self, party):
+        print("\n{0} {1} seated".format(party, current_thread().getName()), flush=True)
+
+    def seat_democrat(self):
+        ride_leader = False
+        self.lock.acquire()
+        self.democrats_count += 1
+        if self.democrats_count == 4:
+            # release 3 democrats to ride along
+            self.democrats_waiting.release()
+            self.democrats_waiting.release()
+            self.democrats_waiting.release()
+            ride_leader = True
+            self.democrats_count -= 4
+        elif self.democrats_count == 2 and self.republicans_count >= 2:
+            # release 1 democrat and 2 republicans
+            self.democrats_waiting.release()
+            self.republicans_waiting.release()
+            self.republicans_waiting.release()
+            ride_leader = True
+            # remember to decrement the count of dems and repubs
+            # selected for next ride
+            self.democrats_count -= 2
+            self.republicans_count -= 2
+        else:
+            # can't form a valid combination, keep waiting and release lock
+            self.lock.release()
+            # Acquiring a semaphore means this rider is waiting.
+            self.democrats_waiting.acquire()
+
+        self.seated("Democrat")
+        # Wait for all the 4 threads till this point for start driving.
+        self.barrier.wait()
+        if ride_leader is True:
+            self.drive()
+            self.lock.release()
+
+    def seat_republican(self):
+        ride_leader = False
+        self.lock.acquire()
+        self.republicans_count += 1
+        if self.republicans_count == 4:
+            # release 3 republicans to ride along
+            self.republicans_waiting.release()
+            self.republicans_waiting.release()
+            self.republicans_waiting.release()
+            ride_leader = True
+            self.republicans_count -= 4
+
+        elif self.republicans_count == 2 and self.democrats_count >= 2:
+            # release 1 republican and 2 democrats
+            self.republicans_waiting.release()
+            self.democrats_waiting.release()
+            self.democrats_waiting.release()
+            ride_leader = True
+
+            # remember to decrement the count of dems and repubs
+            # selected for next ride
+            self.republicans_count -= 2
+            self.democrats_count -= 2
+        else:
+            # can't form a valid combination, keep waiting and release lock
+            self.lock.release()
+            self.republicans_waiting.acquire()
+
+        self.seated("Republican")
+        self.barrier.wait()
+
+        if ride_leader is True:
+            self.drive()
+            self.lock.release()
 ```
