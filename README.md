@@ -1035,3 +1035,58 @@ class UberSeatingProblem():
             self.drive()
             self.lock.release()
 ```
+### Async to Sync problem:
+This is an actual interview question asked at Netflix.
+
+Imagine we have an AsyncExecutor class that performs some useful task asynchronously via the method execute(). 
+In addition, the method accepts a function object that acts as a callback and gets invoked after the asynchronous execution is done.
+The definition for the involved classes is below. The asynchronous work is simulated using sleep. A passed-in call is invoked to let 
+the invoker take any desired action after the asynchronous processing is complete. <br/>
+
+```python
+from threading import Thread
+from threading import Condition
+from threading import current_thread
+import time
+
+class AsyncExecutor:
+    def work(self, callback):
+        time.sleep(5)
+        callback()
+
+    def execute(self, callback):
+        # Here, self.work if called from SyncExecutor's instance will call the work method of the SyncExecutor because
+        # its overridden.
+        Thread(target=self.work, args=(callback,)).start()
+
+class SyncExecutor(AsyncExecutor):
+    def __init__(self):
+        self.cv = Condition()
+        self.is_done = False
+
+    def work(self, callback):
+        super().work(callback)
+        print("{0} thread notifying".format(current_thread().name))
+        self.cv.acquire()
+        self.cv.notify_all()
+        self.is_done = True
+        self.cv.release()
+
+    def execute(self, callback):
+        super().execute(callback)
+        self.cv.acquire()
+        while self.is_done is False:
+            self.cv.wait()
+        print("{0} thread woken-up".format(current_thread().name))
+        self.cv.release()
+
+def say_hi():
+    print("Hi")
+
+if __name__ == "__main__":
+    exec = SyncExecutor()
+    exec.execute(say_hi)
+
+    print("main thread exiting")
+
+```
